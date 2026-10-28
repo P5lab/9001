@@ -39,7 +39,7 @@ button.act:disabled{background:#26393f;color:#6f858e;cursor:default}
 button.act.sm{padding:8px 12px;font-size:.85rem}
 button:focus-visible,input:focus-visible,.slot:focus-visible,.socket:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
 .badge{display:inline-block;min-width:1.4em;padding:0 5px;border-radius:9px;background:var(--err);color:#fff;font-size:.75rem;margin-left:6px}
-#toast{position:absolute;left:50%;top:calc(env(safe-area-inset-top,0px) + 92px);transform:translate(-50%,-8px);max-width:min(92vw,420px);
+#toast{position:absolute;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 76px);transform:translate(-50%,8px);max-width:min(92vw,420px);
   background:var(--err);color:#2a0905;font-weight:600;font-size:.86rem;padding:9px 13px;border-radius:8px;opacity:0;transition:.2s;pointer-events:none;z-index:50;text-align:center}
 #toast.ok{background:var(--ok);color:#08231a}#toast.info{background:var(--steel);color:#10202a}
 #toast.on{opacity:1;transform:translate(-50%,0)}
@@ -120,7 +120,23 @@ label.f{font-size:.75rem;color:var(--dim);letter-spacing:.08em;text-transform:up
 .v.ram.bad::after{top:47%}
 .ctrls{display:grid;grid-template-columns:1fr 1.5fr;gap:10px}
 .tip{font-size:.78rem;color:var(--dim);line-height:1.5;margin:0}
-@media (prefers-reduced-motion:reduce){.v,#toast{transition:none}.slot.bad .led{animation:none}}
+/* debug terminal */
+#debug{position:absolute;inset:0;z-index:31;background:#070c10;display:flex;flex-direction:column;gap:10px;padding-block:12px calc(16px + env(safe-area-inset-bottom,0px))}
+#debug .dh{display:flex;justify-content:space-between;align-items:baseline;font-family:var(--mono);font-size:.78rem;color:var(--dim)}
+#debug .dh b{font-family:var(--display);font-size:1.2rem;color:var(--ink)}
+#term{flex:1;min-height:0;overflow:hidden;background:#0a1410;border:1px solid #1f3a2c;border-radius:8px;padding:10px;font-family:var(--mono);font-size:.74rem;line-height:1.45;color:#8fe3a8;
+  display:flex;flex-direction:column;justify-content:flex-end;word-break:break-word}
+#term .w{color:var(--amber)}#term .e{color:var(--err);font-weight:600}#term .c{color:var(--ink)}
+#term .cur::after{content:"▋";animation:blink 1s steps(2) infinite}
+.meter{height:22px;border-radius:6px;background:#15232c;border:1px solid var(--line);overflow:hidden;position:relative}
+.meter i{position:absolute;inset:0 auto 0 0;background:linear-gradient(90deg,#2d8a5b,var(--ok));transition:width .08s linear}
+.meter span{position:absolute;inset:0;display:grid;place-items:center;font-family:var(--mono);font-size:.72rem;color:var(--ink);text-shadow:0 1px 2px #000}
+#dbtn{font:700 1.4rem var(--display);letter-spacing:.06em;padding:22px 10px;border-radius:12px;border:0;background:var(--ok);color:#08231a;cursor:pointer;box-shadow:0 5px 0 #2a7a4f;touch-action:manipulation}
+#dbtn:active{transform:translateY(4px);box-shadow:0 1px 0 #2a7a4f}
+#dbtn.done{background:var(--amber);box-shadow:0 5px 0 #b8862a;color:#2a1a05}
+#debug.shake{animation:shake .12s}
+@keyframes shake{25%{transform:translateX(-2px)}75%{transform:translateX(2px)}}
+@media (prefers-reduced-motion:reduce){.v,#toast{transition:none}.slot.bad .led,#term .cur::after,#debug.shake{animation:none}}
 
 html{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px)}
 body{margin:0;font-size:14px}
@@ -142,6 +158,13 @@ body{margin:0;font-size:14px}
   <div id="toast"></div>
   <div id="sheet" class="side" hidden></div>
   <div id="repair" class="side" hidden></div>
+  <div id="debug" class="side" hidden>
+    <div class="dh"><b id="dtitle">Debug</b><span id="dsub"></span></div>
+    <div id="term" aria-live="polite"></div>
+    <div class="meter"><i id="dfill" style="width:0%"></i><span id="dpct">0%</span></div>
+    <button id="dbtn" type="button">DEBUGUJ</button>
+    <button class="act" id="dexit" type="button">Wróć na salę</button>
+  </div>
   <div id="start" class="side"><div class="card" id="startCard"></div></div>
 </div>
 
@@ -213,32 +236,73 @@ function ensureSt(m){if(m.st)return m.st;const n=m.lr?4:2;const st={sockets:[],s
 /* ===== tickets ===== */
 function newTicket(){
   const cands=Object.values(machines).filter(m=>!G.tickets.some(t=>t.mid===m.id));
-  const m=pick(cands),st=ensureSt(m),cpu=Math.random()<.4;let txt;
-  if(cpu){const p=Math.floor(Math.random()*st.sockets.length);st.sockets[p].bad=1;txt='Wymiana procesora P'+(p+1)}
-  else{const k=pick(Object.keys(st.slots));st.slots[k].bad=1;txt='Wymiana RAM '+k.slice(0,2)+', slot '+k[2]}
-  G.tickets.push({id:'INC-'+(++G.tid),mid:m.id,part:cpu?'cpu':'ram',txt,t0:G.now,dl:G.now+SLA,mine:false});
-  toast('Nowy ticket: '+m.id+' w '+m.rack.code,'info');
+  const m=pick(cands),st=ensureSt(m),cpu=Math.random()<.4,hidden=G.now>20&&Math.random()<.3;let txt,root;
+  if(cpu){const p=Math.floor(Math.random()*st.sockets.length);st.sockets[p].bad=1;txt='Wymiana procesora P'+(p+1);
+    root='mce: [Hardware Error] P'+(p+1)+': Machine Check Exception, bank 4. Procesor P'+(p+1)+' do wymiany'}
+  else{const k=pick(Object.keys(st.slots));st.slots[k].bad=1;txt='Wymiana RAM '+k.slice(0,2)+', slot '+k[2];
+    root='EDAC MC'+k[1]+': błąd nienaprawialny w module '+k.slice(0,2)+'-'+k[2]+'. Moduł do wymiany'}
+  const t={id:'INC-'+(++G.tid),mid:m.id,part:cpu?'cpu':'ram',txt,root,t0:G.now,dl:G.now+SLA,mine:false,hidden};
+  if(hidden){t.real=txt;t.txt='Coś nie działa'}
+  G.tickets.push(t);
+  toast((hidden?'Nowy ticket: coś nie działa na ':'Nowy ticket: ')+m.id+' w '+m.rack.code,'info');
 }
 function expireTickets(){
   G.tickets=G.tickets.filter(t=>{if(G.now<t.dl)return true;
-    const m=machines[t.mid];if(cur===m)closeRepair();m.st=null;addScore(-50);toast('Ticket '+t.id+' przeterminowany, −50');return false});
+    const m=machines[t.mid];if(cur===m)closeRepair();if(dbg&&dbg.m===m)closeDebug();m.st=null;addScore(-50);toast('Ticket '+t.id+' przeterminowany, −50');return false});
 }
 
 /* ===== NPCs ===== */
 function updateKing(dt){
+  if(G.kingPlan==null)G.kingPlan=60;
   if(!G.king&&!G.kingAt&&(G.stock.cpu===0||G.stock.ram===0)){G.kingAt=G.now+10;toast('Brakuje części. Król labu już idzie','info')}
-  if(!G.king&&G.kingAt&&G.now>=G.kingAt){G.king={x:SPAWN.x,y:SPAWN.y,path:[],speed:70,mode:'in',face:0};walkTo(G.king,CABACC.x+20,CABACC.y)}
-  const k=G.king;if(!k)return;stepEnt(k,dt);
+  // planned delivery: the king also drops by regularly when the shelf is not full
+  if(!G.king&&!G.kingAt&&G.now>=G.kingPlan&&(G.stock.cpu<STOCKMAX.cpu||G.stock.ram<STOCKMAX.ram)){G.kingAt=G.now+2;toast('Król labu idzie z planową dostawą','info')}
+  if(!G.king&&G.kingAt&&G.now>=G.kingAt){G.king={x:SPAWN.x,y:SPAWN.y,path:[],speed:70,mode:'in',face:0,willChat:Math.random()<.65,chatted:false};
+    G.kingPlan=G.now+90;walkTo(G.king,CABACC.x+20,CABACC.y);if(G.king.willChat&&!G.eng)G.engAt=G.now}
+  const k=G.king;if(!k)return;
+  if(G.chat){updateChat(dt);return}
+  // the engineer joins even if he was on his way out
+  if(k.mode==='in'&&k.willChat&&!k.chatted&&k.y>70&&G.eng){startChat();return}
+  stepEnt(k,dt);
   if(!k.path.length){
     if(k.mode==='in'){G.stock={...STOCKMAX};toast('Król labu uzupełnił szafkę','ok');k.mode='out';walkTo(k,SPAWN.x,SPAWN.y);if(sheetKind==='cab')openCab()}
     else{G.king=null;G.kingAt=0}
   }
 }
+/* king and engineer stop for a chat; delivery waits */
+const SAY_K=['O, cześć! Dawno cię nie widziałem','Niosę części, ale chwilka mam','A ten kabel w C3 sam wypadł?','Ekspres w kuchni znowu nie działa','Za moich czasów RAM był po 4 MB','Protokół wypełniłeś?','Dobra, dobra, nikomu nie powiem','Słyszałeś, że przyjdą nowe LR-y?'];
+const SAY_E=['Byłem na sali, sprawdzałem kable','Nic nie ruszałem, przysięgam','Ty, a widziałeś mecz wczoraj?','Mówię ci, to wina BMC','Te szafy stoją za ciasno','Kawy nie ma? To ja idę po kawę','A kto ustawiał te alejki?','Jutro mam urlop, chyba'];
+function startChat(){
+  const k=G.king,e=G.eng;k.path=[];
+  const[cx_,cy_]=nearestFree(...cellOf(k.x+32,k.y));
+  G.chat={phase:'gather',t:0,end:0,who:1,line:'',lineAt:0};
+  walkTo(e,cx_*CELL+5,cy_*CELL+5);
+}
+function updateChat(dt){
+  const c=G.chat,k=G.king,e=G.eng;
+  if(!e){G.chat=null;k.chatted=true;walkTo(k,CABACC.x+20,CABACC.y);return}
+  if(c.phase==='gather'){stepEnt(e,dt);
+    if(!e.path.length){c.phase='talk';c.end=G.now+10+Math.random()*6;c.lineAt=G.now;c.line=pick(SAY_K);c.who=0;
+      toast('Król labu zagadał się z inżynierem. Dostawa się opóźni','info');if(sheetKind==='cab')renderSheet()}
+    return}
+  const ang=Math.atan2(e.y-k.y,e.x-k.x);k.face=ang;e.face=ang+Math.PI;
+  if(G.now-c.lineAt>2.2){c.lineAt=G.now;c.who^=1;c.line=pick(c.who?SAY_E:SAY_K)}
+  if(G.now>=c.end){G.chat=null;k.chatted=true;walkTo(k,CABACC.x+20,CABACC.y);if(e.mode==='out')walkTo(e,SPAWN.x,SPAWN.y);if(sheetKind==='cab')renderSheet()}
+}
+function bubble(e,text,h){
+  const age=G.now-G.chat.lineAt,typing=age<0.5;const s=typing?'.'.repeat(1+Math.floor(age*8)%3):text;
+  cx.font='8px "IBM Plex Sans",sans-serif';const w=Math.min(190,cx.measureText(s).width+12);
+  let x=Math.max(4,Math.min(W-w-4,e.x-w/2)),y=e.y-h-20;
+  cx.fillStyle='#e6eef2';cx.beginPath();cx.roundRect(x,y,w,15,5);cx.fill();
+  cx.beginPath();cx.moveTo(e.x-3,y+15);cx.lineTo(e.x+3,y+15);cx.lineTo(e.x,y+20);cx.fill();
+  cx.fillStyle='#10202a';cx.textAlign='left';cx.textBaseline='middle';
+  let t=s;while(cx.measureText(t).width>w-10&&t.length>3)t=t.slice(0,-2)+'…';cx.fillText(t,x+6,y+7.5);
+}
 function walkwayPoint(){const i=Math.floor(Math.random()*5);const x=i===0?12:28+(i-1)*94+34+30;return{x:Math.min(x,388),y:120+Math.random()*440}}
 function updateEng(dt){
   if(!G.eng&&G.now>=G.engAt){G.eng={x:SPAWN.x,y:SPAWN.y,path:[],speed:42,face:0,way:[walkwayPoint(),walkwayPoint(),walkwayPoint(),walkwayPoint()],t:0,hits:0,mode:'in'};
     toast('Otyły inżynier wszedł do serwerowni','info')}
-  const e=G.eng;if(!e)return;stepEnt(e,dt);
+  const e=G.eng;if(!e)return;if(G.chat)return;stepEnt(e,dt);
   if(e.mode==='in'){
     e.t+=dt;
     if(e.t>1.4){e.t=0;if(e.hits<3){
@@ -258,7 +322,7 @@ function update(dt){
   G.downTick+=dt;if(G.downTick>=3){G.downTick=0;const off=Object.values(machines).filter(m=>!m.on).length;if(off)addScore(-off)}
   stepEnt(G.me,dt);
   if(!G.me.path.length&&G.pending){const p=G.pending;G.pending=null;G.tapMark=null;if(p.type==='rack')openRack(p.rack);else if(p.type==='cab')openCab()}
-  updateKing(dt);updateEng(dt);
+  updateKing(dt);updateEng(dt);debugTick(dt);
   hudTick();
 }
 
@@ -274,6 +338,7 @@ function label(t,x,y,col,size,align){cx.fillStyle=col;cx.font=(size||10)+'px "IB
 function person(e,o){
   const S=1.25,w=o.w||1,moving=e.path&&e.path.length>0;
   const ph=moving?Math.sin(G.now*13+(o.seed||0)):0;
+  const ah=moving?ph:(o.talk?Math.sin(G.now*9)*1.3:0);   // arms gesture while talking
   const f=e.face||0,dir=Math.cos(f)<-0.15?-1:1,back=moving&&Math.sin(f)<-0.75;
   const line=(x1,y1,x2,y2,col,lw)=>{cx.strokeStyle=col;cx.lineWidth=lw;cx.lineCap='round';cx.beginPath();cx.moveTo(x1,y1);cx.lineTo(x2,y2);cx.stroke()};
   cx.save();cx.translate(e.x,e.y);cx.scale(S,S);
@@ -284,8 +349,9 @@ function person(e,o){
   cx.fillStyle='#1a1f24';cx.beginPath();cx.ellipse(-lx+ph*2.6+dir,-0.6,2,1.3,0,0,7);cx.ellipse(lx-ph*2.6+dir,-0.6,2,1.3,0,0,7);cx.fill();
   // arms behind torso
   const sx=4.3*w;
-  line(-sx,-16,-sx-0.6-ph*2.4*dir,-9.5,o.shirt2||o.shirt,2.6);line(sx,-16,sx+0.6+ph*2.4*dir,-9.5,o.shirt2||o.shirt,2.6);
-  cx.fillStyle=o.skin;cx.beginPath();cx.arc(-sx-0.6-ph*2.4*dir,-9,1.3,0,7);cx.arc(sx+0.6+ph*2.4*dir,-9,1.3,0,7);cx.fill();
+  const hy=o.talk?-12+ah*2:-9.5;
+  line(-sx,-16,-sx-0.6-ah*2.4*dir,hy,o.shirt2||o.shirt,2.6);line(sx,-16,sx+0.6+ah*2.4*dir,o.talk?-12-ah*2:hy,o.shirt2||o.shirt,2.6);
+  cx.fillStyle=o.skin;cx.beginPath();cx.arc(-sx-0.6-ah*2.4*dir,hy+.5,1.3,0,7);cx.arc(sx+0.6+ah*2.4*dir,(o.talk?-12-ah*2:hy)+.5,1.3,0,7);cx.fill();
   // torso
   cx.fillStyle=o.shirt;cx.beginPath();cx.roundRect(-4*w,-18,8*w,11,[3,3,2,2]);cx.fill();
   if(o.belly){cx.beginPath();cx.ellipse(dir*1.6*w,-11.5,4.4*w,4.6,0,0,7);cx.fill()}
@@ -336,12 +402,15 @@ function draw(){
   const folk=[[G.me,{name:nick||'technik',me:1,shirt:'#2f8f9d',pants:'#2b3a4a',skin:'#f1d3b3',hair:'#5a3b24',lanyard:C.amber,seed:0}]];
   if(G.eng)folk.push([G.eng,{name:'Inżynier',w:1.55,belly:1,shirt:'#b65b47',pants:'#3a3f55',skin:'#e9c2a0',hair:'#2a2a2a',hardhat:'#f2f2f2',seed:2}]);
   if(G.king)folk.push([G.king,{name:'Król labu',shirt:'#e6eef2',cape:'#7a2f8f',pants:'#2b2b38',skin:'#d9a982',hair:'#3a2a1a',crown:1,seed:4}]);
+  const talking=G.chat&&G.chat.phase==='talk';
+  if(talking){folk.forEach(([e,o])=>{if((e===G.king&&G.chat.who===0)||(e===G.eng&&G.chat.who===1))o.talk=1})}
   folk.sort((a,b)=>a[0].y-b[0].y).forEach(([e,o])=>person(e,o));
+  if(talking){const sp=G.chat.who?G.eng:G.king;bubble(sp,G.chat.line,G.chat.who?48:52)}
 }
 
 /* ===== input on map ===== */
 cv.addEventListener('pointerdown',e=>{
-  if(!playing||!$('repair').hidden)return;
+  if(!playing||!$('repair').hidden||!$('debug').hidden)return;
   if(!$('sheet').hidden){closeSheet();return}
   const r=cv.getBoundingClientRect(),wx=(e.clientX-r.left-offX)/sc,wy=(e.clientY-r.top)/sc+camY;
   const inR=(o,p)=>wx>o.x-p&&wx<o.x+o.w+p&&wy>o.y-p&&wy<o.y+o.h+p;
@@ -381,12 +450,12 @@ function renderSheet(){
     rk.ms.forEach(id=>{const m=machines[id],t=G.tickets.find(t=>t.mid===id);
       h+='<div class="row"><div class="main"><div class="t">'+id+(m.on?'<span class="pill ok">działa</span>':'<span class="pill err">brak zasilania</span>')+(t?'<span class="pill am">'+t.id+'</span>':'')+'</div><div class="d">'+(m.lr?'LR · 4 procesory':'NC · 2 procesory')+(t?' · '+t.txt:'')+'</div></div><div class="btns">';
       if(!m.on)h+='<button class="act sm go" data-a="power" data-id="'+id+'" type="button">Włącz</button>';
-      if(t)h+='<button class="act sm pri" data-a="fix" data-id="'+id+'" type="button">Napraw</button>';
+      if(t)h+='<button class="act sm pri" data-a="fix" data-id="'+id+'" type="button">'+(t.hidden?'Debuguj':'Napraw')+'</button>';
       h+='</div></div>'});
     h+='</div>';
   }else if(sheetKind==='cab'){const s=G.stock,full=G.inv.length>=HANDS;
     h='<div class="sh"><h2>Szafka z częściami</h2><button class="act sm" data-a="close" type="button">Zamknij</button></div>';
-    h+='<p class="sub">'+(G.king&&G.king.mode==='in'?'Król labu niesie dostawę.':G.kingAt?'Król labu zaraz przyjdzie z dostawą.':'Uszkodzone części wyrzucasz od razu przy maszynie.')+'</p><div class="list">';
+    h+='<p class="sub">'+(G.chat?'Król labu zagadał się z inżynierem. Dostawa się opóźni.':G.king&&G.king.mode==='in'?'Król labu niesie dostawę.':G.kingAt?'Król labu zaraz przyjdzie z dostawą.':'Uszkodzone części wyrzucasz od razu przy maszynie.')+'</p><div class="list">';
     [['cpu','Procesor'],['ram','Moduł RAM']].forEach(([k,n])=>{h+='<div class="row"><div class="main"><div class="t">'+n+(s[k]?'':'<span class="pill err">brak</span>')+'</div><div class="d">Na półce: '+s[k]+' z '+STOCKMAX[k]+'</div></div><div class="btns"><button class="act sm pri" data-a="take" data-k="'+k+'" type="button"'+(!s[k]||full?' disabled':'')+'>Weź</button></div></div>'});
     h+='</div><p class="sub" style="margin-top:14px">W rękach '+G.inv.length+' z '+HANDS+'</p><div class="list">';
     G.inv.forEach((it,i)=>{h+='<div class="row"><div class="main"><div class="t">'+(it.t==='cpu'?'Procesor':'Moduł RAM')+'</div><div class="d">'+(it.t==='bad'?'Wycięcie na środku, coś tu nie pasuje':'Sprawny, nowy')+'</div></div><div class="btns"><button class="act sm" data-a="back" data-i="'+i+'" type="button">'+(it.t==='bad'?'Wyrzuć':'Odłóż')+'</button></div></div>'});
@@ -405,7 +474,8 @@ function renderSheet(){
 $('sheet').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;const a=b.dataset.a;
   if(a==='close')closeSheet();
   else if(a==='power'){const m=machines[b.dataset.id];if(!m.on){m.on=true;G.fixedPower++;addScore(10);toast(m.id+' znowu działa, +10','ok')}renderSheet()}
-  else if(a==='fix'){const m=machines[b.dataset.id];G.tickets.filter(t=>t.mid===m.id).forEach(t=>t.mine=true);closeSheet();openRepair(m)}
+  else if(a==='fix'){const m=machines[b.dataset.id],ts=G.tickets.filter(t=>t.mid===m.id);ts.forEach(t=>t.mine=true);closeSheet();
+    const h=ts.find(t=>t.hidden);if(h)openDebug(m,h);else openRepair(m)}
   else if(a==='take'){const k=b.dataset.k;if(G.inv.length>=HANDS||!G.stock[k])return;G.stock[k]--;
     G.inv.push(k==='cpu'?{t:'cpu',rot:pick([0,90,180,270])}:{t:Math.random()<.15?'bad':'ram',rot:pick([0,180])});renderSheet()}
   else if(a==='back'){const it=G.inv.splice(+b.dataset.i,1)[0];if(it&&it.t!=='bad')G.stock[it.t]++;else toast('Wadliwy moduł do utylizacji','info');renderSheet()}
@@ -485,9 +555,46 @@ function rPlace(tg){
 }
 function finishRepair(){
   const m=cur;if(!benchDone(m.st))return;let pts=0;
-  G.tickets=G.tickets.filter(t=>{if(t.mid!==m.id)return true;pts+=100+Math.round((t.dl-G.now)/SLA*100);G.closed++;return false});
+  G.tickets=G.tickets.filter(t=>{if(t.mid!==m.id)return true;pts+=100+Math.round((t.dl-G.now)/SLA*100)+(t.debugged?50:0);G.closed++;return false});
   m.on=true;m.st=null;addScore(pts);toast(pts?'Ticket zamknięty, +'+pts:'Maszyna sprawna','ok');closeRepair();
 }
+
+/* ===== debug minigame: tap fast to fill the meter before it drains ===== */
+const LOGS=[
+  ['kernel: ktoś znowu stawiał kawę na szafie',''],['ipmitool sel list: 47 wpisów, 46 o wentylatorach',''],
+  ['sensors: P1 71°C, P2 72°C, kawa 85°C',''],['BMC: kto wyjął kabel? (pytanie retoryczne)','w'],
+  ['memtest: przebieg 1/4 ... ok',''],['journalctl: 4812 linii o niczym',''],['grep -i error: 1 trafienie, szukam dalej','w'],
+  ['ping 10.0.4.17: odpowiada, ale niechętnie',''],['edac-util: liczę błędy ECC...',''],['lspci: wszystko na miejscu, chyba',''],
+  ['[WARN] król labu prosi o wypełnienie protokołu','w'],['strace: 99% czasu w futex(), klasyka',''],['stress-ng: grzejemy procesory...',''],
+  ['fan2: 14000 RPM, brzmi jak odkurzacz',''],['dmesg | tail: coś mignęło na czerwono','w'],['uptime: 412 dni, nikt nie chce restartować',''],
+  ['smartctl: dyski zdrowe, to nie one',''],['dmidecode: sprawdzam numery seryjne...',''],['[WARN] inżynier przeszedł obok, ECC +3','w'],
+  ['ipmitool power status: Chassis Power is on, dzięki Bogu',''],['mcelog: zbieram zgłoszenia sprzętowe...',''],['perf top: nic ciekawego, jak zwykle','']
+];
+let dbg=null;
+function openDebug(m,t){
+  dbg={m,t,v:0,taps:0,done:false,shown:0};
+  $('dtitle').textContent=m.id+' · '+m.rack.code;$('dsub').textContent=t.id+' · coś nie działa';
+  $('term').innerHTML='';termLine('$ ssh root@'+m.id+'-bmc','c');termLine('Uruchamiam diagnostykę. Klikaj szybko, wskaźnik opada.','w');
+  $('dbtn').textContent='DEBUGUJ';$('dbtn').classList.remove('done');$('debug').hidden=false;meter();
+}
+function closeDebug(){dbg=null;$('debug').hidden=true}
+function termLine(s,cls){const term=$('term');term.querySelectorAll('.cur').forEach(e=>e.classList.remove('cur'));
+  const d=document.createElement('div');if(cls)d.className=cls;d.classList.add('cur');
+  d.textContent=(cls==='c'?'':'['+(G.now%1000).toFixed(3).padStart(8,' ')+'] ')+s;term.appendChild(d);
+  while(term.children.length>40)term.firstChild.remove()}
+function meter(){const p=Math.min(100,Math.round(dbg.v));$('dfill').style.width=p+'%';$('dpct').textContent=dbg.done?'przyczyna znaleziona':p+'%'}
+function debugTick(dt){if(!dbg||dbg.done)return;dbg.v=Math.max(0,dbg.v-(dbg.m.lr?20:16)*dt);meter()}
+$('dbtn').addEventListener('pointerdown',e=>{e.preventDefault();if(!dbg)return;
+  if(dbg.done){if(performance.now()-dbg.doneAt<700)return;const m=dbg.m;closeDebug();openRepair(m);return}
+  dbg.taps++;dbg.v+=dbg.m.lr?6:7;
+  if(dbg.taps%2===0){const l=pick(LOGS);termLine(l[0],l[1])}
+  const d=$('debug');d.classList.remove('shake');void d.offsetWidth;d.classList.add('shake');
+  if(dbg.v>=100){dbg.v=100;dbg.done=true;dbg.doneAt=performance.now();const t=dbg.t;
+    termLine('ROOT CAUSE: '+t.root,'e');termLine('Diagnoza gotowa w '+dbg.taps+' kliknięciach.','c');
+    t.hidden=false;t.txt=t.real;t.debugged=true;lastHud='';
+    $('dbtn').textContent='DO WYMIANY';$('dbtn').classList.add('done');toast('Znalezione: '+t.real,'ok')}
+  meter()});
+$('dexit').onclick=()=>closeDebug();
 
 /* ===== start, end, ranking ===== */
 function rankHtml(hi){const r=store.get('srv-rank',[]);if(!r.length)return '<p class="sub" style="margin:0">Ranking pusty. Bądź pierwszy.</p>';
@@ -499,11 +606,11 @@ function showStart(){
     '<label class="f" for="nick">Twój nick</label><input id="nick" maxlength="14" autocomplete="off" value="'+esc(nick)+'" placeholder="np. Piotrek">'+
     '<button class="act pri" id="go" type="button">Wchodzę na zmianę</button><label class="f">Ranking na tym telefonie</label>'+rankHtml(-1);
   $('go').onclick=()=>{const v=$('nick').value.trim().slice(0,14);if(!v){toast('Wpisz nick');$('nick').focus();return}
-    nick=v;store.set('srv-nick',nick);$('nickv').textContent=nick;newGame();$('score').textContent=0;lastHud='';$('start').hidden=true;closeSheet();closeRepair();playing=true};
+    nick=v;store.set('srv-nick',nick);$('nickv').textContent=nick;newGame();$('score').textContent=0;lastHud='';$('start').hidden=true;closeSheet();closeRepair();closeDebug();playing=true};
   $('nick').onkeydown=e=>{if(e.key==='Enter')$('go').click()};
 }
 function endShift(){
-  closeSheet();closeRepair();playing=false;
+  closeSheet();closeRepair();closeDebug();playing=false;
   const r=store.get('srv-rank',[]);const entry={n:nick,s:G.score,d:Date.now()};r.push(entry);r.sort((a,b)=>b.s-a.s);const top=r.slice(0,8);store.set('srv-rank',top);
   $('start').hidden=false;
   $('startCard').innerHTML='<h1>Koniec zmiany</h1><p>'+esc(nick)+', zrobiłeś '+G.score+' pkt. Zamknięte tickety: '+G.closed+', włączone maszyny: '+G.fixedPower+'.</p>'+
